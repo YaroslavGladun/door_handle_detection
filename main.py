@@ -8,7 +8,7 @@ from door_handle_detection_utils import RANSACProcessor
 
 class AppState:
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         self.WIN_NAME = 'RealSense'
         self.pitch, self.yaw = math.radians(-10), math.radians(-15)
         self.translation = np.array([0, 0, -1], dtype=np.float32)
@@ -91,6 +91,123 @@ class App:
 
         self.state.prev_mouse = (x, y)
 
+    def line3d(self, pt1, pt2, color=(0x80, 0x80, 0x80), thickness=1):
+        """draw a 3d line from pt1 to pt2"""
+        p0 = self.project(pt1.reshape(-1, 3))[0]
+        p1 = self.project(pt2.reshape(-1, 3))[0]
+        if np.isnan(p0).any() or np.isnan(p1).any():
+            return
+        p0 = tuple(p0.astype(int))
+        p1 = tuple(p1.astype(int))
+        rect = (0, 0, self.out.shape[1], self.out.shape[0])
+        inside, p0, p1 = cv2.clipLine(rect, p0, p1)
+        if inside:
+            cv2.line(self.out, p0, p1, color, thickness, cv2.LINE_AA)
+
+    def grid(self, pos, rotation=np.eye(3), size=1, n=10, color=(0x80, 0x80, 0x80)):
+        """draw a grid on xz plane"""
+        pos = np.array(pos)
+        s = size / float(n)
+        s2 = 0.5 * size
+        for i in range(0, n + 1):
+            x = -s2 + i * s
+            self.line3d(self.view(pos + np.dot((x, 0, -s2), rotation)),
+                        self.view(pos + np.dot((x, 0, s2), rotation)), color)
+        for i in range(0, n + 1):
+            z = -s2 + i * s
+            self.line3d(self.view(pos + np.dot((-s2, 0, z), rotation)),
+                        self.view(pos + np.dot((s2, 0, z), rotation)), color)
+
+    def axes(self, pos, rotation=np.eye(3), size=0.075, thickness=2):
+        """draw 3d axes"""
+        self.line3d(pos, pos +
+                   np.dot((0, 0, size), rotation), (0xff, 0, 0), thickness)
+        self.line3d(pos, pos +
+                   np.dot((0, size, 0), rotation), (0, 0xff, 0), thickness)
+        self.line3d(pos, pos +
+                   np.dot((size, 0, 0), rotation), (0, 0, 0xff), thickness)
+
+    def frustum(self, intrinsics, color=(0x40, 0x40, 0x40)):
+        """draw camera's frustum"""
+        orig = self.view(np.zeros(3))
+        w, h = intrinsics.width, intrinsics.height
+
+        for d in range(1, 6, 2):
+            def get_point(x, y):
+                p = rs.rs2_deproject_pixel_to_point(intrinsics, [x, y], d)
+                self.line3d(orig, self.view(p), color)
+                return p
+
+            top_left = get_point(0, 0)
+            top_right = get_point(w, 0)
+            bottom_right = get_point(w, h)
+            bottom_left = get_point(0, h)
+
+            self.line3d(self.view(top_left), self.view(top_right), color)
+            self.line3d(self.view(top_right), self.view(bottom_right), color)
+            self.line3d(self.view(bottom_right), self.view(bottom_left), color)
+            self.line3d(self.view(bottom_left), self.view(top_left), color)
+
+    def project(self, v):
+        """project 3d vector array to 2d"""
+        h, w = self.out.shape[:2]
+        view_aspect = float(h) / w
+
+        # ignore divide by zero for invalid depth
+        with np.errstate(divide='ignore', invalid='ignore'):
+            proj = v[:, :-1] / v[:, -1, np.newaxis] * \
+                   (w * view_aspect, h) + (w / 2.0, h / 2.0)
+
+        # near clipping
+        znear = 0.03
+        proj[v[:, 2] < znear] = np.nan
+        return proj
+
+    def view(self, v: np.ndarray):
+        """apply view transformation on vector array"""
+        return np.dot(v - self.state.pivot, self.state.rotation) + self.state.pivot - self.state.translation
+
+    def pointcloud(self, out, verts, texcoords, color, painter=True):
+        """draw point cloud with optional painter's algorithm"""
+        if painter:
+            # Painter's algo, sort points from back to front
+
+            # get reverse sorted indices by z (in view-space)
+            # https://gist.github.com/stevenvo/e3dad127598842459b68
+            v = app.view(verts)
+            s = v[:, 2].argsort()[::-1]
+            proj = app.project(v[s])
+        else:
+            proj = app.project(app.view(verts))
+
+        if app.state.scale:
+            proj *= 0.5 ** app.state.decimate
+
+        h, w = out.shape[:2]
+
+        # proj now contains 2d image coordinates
+        j, i = proj.astype(np.uint32).T
+
+        # create a mask to ignore out-of-bound indices
+        im = (i >= 0) & (i < h)
+        jm = (j >= 0) & (j < w)
+        m = im & jm
+
+        cw, ch = color.shape[:2][::-1]
+        if painter:
+            # sort texcoord with same indices as above
+            # texcoords are [0..1] and relative to top-left pixel corner,
+            # multiply by size and add 0.5 to center
+            v, u = (texcoords[s] * (cw, ch) + 0.5).astype(np.uint32).T
+        else:
+            v, u = (texcoords * (cw, ch) + 0.5).astype(np.uint32).T
+        # clip texcoords to image
+        np.clip(u, 0, ch - 1, out=u)
+        np.clip(v, 0, cw - 1, out=v)
+
+        # perform uv-mapping
+        out[i[m], j[m]] = color[u[m], v[m]]
+
 
 # Configure depth and color streams
 pipeline = rs.pipeline()
@@ -128,130 +245,6 @@ pc = rs.pointcloud()
 decimate = rs.decimation_filter()
 decimate.set_option(rs.option.filter_magnitude, 2 ** app.state.decimate)
 colorizer = rs.colorizer()
-
-
-def project(v):
-    """project 3d vector array to 2d"""
-    h, w = app.out.shape[:2]
-    view_aspect = float(h) / w
-
-    # ignore divide by zero for invalid depth
-    with np.errstate(divide='ignore', invalid='ignore'):
-        proj = v[:, :-1] / v[:, -1, np.newaxis] * \
-               (w * view_aspect, h) + (w / 2.0, h / 2.0)
-
-    # near clipping
-    znear = 0.03
-    proj[v[:, 2] < znear] = np.nan
-    return proj
-
-
-def view(v):
-    """apply view transformation on vector array"""
-    return np.dot(v - app.state.pivot, app.state.rotation) + app.state.pivot - app.state.translation
-
-
-def line3d(pt1, pt2, color=(0x80, 0x80, 0x80), thickness=1):
-    """draw a 3d line from pt1 to pt2"""
-    p0 = project(pt1.reshape(-1, 3))[0]
-    p1 = project(pt2.reshape(-1, 3))[0]
-    if np.isnan(p0).any() or np.isnan(p1).any():
-        return
-    p0 = tuple(p0.astype(int))
-    p1 = tuple(p1.astype(int))
-    rect = (0, 0, app.out.shape[1], app.out.shape[0])
-    inside, p0, p1 = cv2.clipLine(rect, p0, p1)
-    if inside:
-        cv2.line(app.out, p0, p1, color, thickness, cv2.LINE_AA)
-
-
-def grid(pos, rotation=np.eye(3), size=1, n=10, color=(0x80, 0x80, 0x80)):
-    """draw a grid on xz plane"""
-    pos = np.array(pos)
-    s = size / float(n)
-    s2 = 0.5 * size
-    for i in range(0, n + 1):
-        x = -s2 + i * s
-        line3d(view(pos + np.dot((x, 0, -s2), rotation)),
-               view(pos + np.dot((x, 0, s2), rotation)), color)
-    for i in range(0, n + 1):
-        z = -s2 + i * s
-        line3d(view(pos + np.dot((-s2, 0, z), rotation)),
-               view(pos + np.dot((s2, 0, z), rotation)), color)
-
-
-def axes(pos, rotation=np.eye(3), size=0.075, thickness=2):
-    """draw 3d axes"""
-    line3d(pos, pos +
-           np.dot((0, 0, size), rotation), (0xff, 0, 0), thickness)
-    line3d(pos, pos +
-           np.dot((0, size, 0), rotation), (0, 0xff, 0), thickness)
-    line3d(pos, pos +
-           np.dot((size, 0, 0), rotation), (0, 0, 0xff), thickness)
-
-
-def frustum(intrinsics, color=(0x40, 0x40, 0x40)):
-    """draw camera's frustum"""
-    orig = view([0, 0, 0])
-    w, h = intrinsics.width, intrinsics.height
-
-    for d in range(1, 6, 2):
-        def get_point(x, y):
-            p = rs.rs2_deproject_pixel_to_point(intrinsics, [x, y], d)
-            line3d(orig, view(p), color)
-            return p
-
-        top_left = get_point(0, 0)
-        top_right = get_point(w, 0)
-        bottom_right = get_point(w, h)
-        bottom_left = get_point(0, h)
-
-        line3d(view(top_left), view(top_right), color)
-        line3d(view(top_right), view(bottom_right), color)
-        line3d(view(bottom_right), view(bottom_left), color)
-        line3d(view(bottom_left), view(top_left), color)
-
-
-def pointcloud(out, verts, texcoords, color, painter=True):
-    """draw point cloud with optional painter's algorithm"""
-    if painter:
-        # Painter's algo, sort points from back to front
-
-        # get reverse sorted indices by z (in view-space)
-        # https://gist.github.com/stevenvo/e3dad127598842459b68
-        v = view(verts)
-        s = v[:, 2].argsort()[::-1]
-        proj = project(v[s])
-    else:
-        proj = project(view(verts))
-
-    if app.state.scale:
-        proj *= 0.5 ** app.state.decimate
-
-    h, w = out.shape[:2]
-
-    # proj now contains 2d image coordinates
-    j, i = proj.astype(np.uint32).T
-
-    # create a mask to ignore out-of-bound indices
-    im = (i >= 0) & (i < h)
-    jm = (j >= 0) & (j < w)
-    m = im & jm
-
-    cw, ch = color.shape[:2][::-1]
-    if painter:
-        # sort texcoord with same indices as above
-        # texcoords are [0..1] and relative to top-left pixel corner,
-        # multiply by size and add 0.5 to center
-        v, u = (texcoords[s] * (cw, ch) + 0.5).astype(np.uint32).T
-    else:
-        v, u = (texcoords * (cw, ch) + 0.5).astype(np.uint32).T
-    # clip texcoords to image
-    np.clip(u, 0, ch - 1, out=u)
-    np.clip(v, 0, cw - 1, out=v)
-
-    # perform uv-mapping
-    out[i[m], j[m]] = color[u[m], v[m]]
 
 
 ransac_processor = RANSACProcessor(1000, 500)
@@ -297,22 +290,22 @@ while True:
 
     app.out.fill(0)
 
-    grid((0, 0.5, 1), size=1, n=10)
-    frustum(depth_intrinsics)
-    axes(view([0, 0, 0]), app.state.rotation, size=0.1, thickness=1)
-    line3d(view([0, 0, 0]), view(10 * plane[:-1]), thickness=2)
+    app.grid((0, 0.5, 1), size=1, n=10)
+    app.frustum(depth_intrinsics)
+    app.axes(app.view([0, 0, 0]), app.state.rotation, size=0.1, thickness=1)
+    app.line3d(app.view([0, 0, 0]), app.view(10 * plane[:-1]), thickness=2)
 
     if not app.state.scale or app.out.shape[:2] == (h, w):
-        pointcloud(verts, texcoords, color_source)
+        app.pointcloud(verts, texcoords, color_source)
     else:
         tmp = np.zeros((h, w, 3), dtype=np.uint8)
-        pointcloud(tmp, verts, texcoords, color_source)
+        app.pointcloud(tmp, verts, texcoords, color_source)
         tmp = cv2.resize(
             tmp, app.out.shape[:2][::-1], interpolation=cv2.INTER_NEAREST)
         np.putmask(app.out, tmp > 0, tmp)
 
     if any(app.state.mouse_btns):
-        axes(view(app.state.pivot), app.state.rotation, thickness=4)
+        app.axes(app.view(app.state.pivot), app.state.rotation, thickness=4)
 
     dt = time.time() - now
 
@@ -342,5 +335,4 @@ while True:
     if key in (27, ord("q")) or cv2.getWindowProperty(app.state.WIN_NAME, cv2.WND_PROP_AUTOSIZE) < 0:
         break
 
-# Stop streaming
 pipeline.stop()
