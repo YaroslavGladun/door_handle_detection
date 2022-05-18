@@ -273,8 +273,10 @@ while True:
 
         if app.state.color:
             mapped_frame, color_source = color_frame, color_image
+            print(color_image.shape)
         else:
             mapped_frame, color_source = depth_frame, depth_colormap
+            print(color_image.shape)
 
         points = pc.calculate(depth_frame)
         pc.map_to(mapped_frame)

@@ -1,1 +1,2 @@
 from door_handle_detection_utils.ransac_processor import RANSACProcessor
+from door_handle_detection_utils.depth_image_ransac_processor import DepthImageRANSACProcessor

@@ -10,11 +10,20 @@ class RANSACProcessor(DataProcessor):
 
     def fit_transform(self, data: np.ndarray) -> np.ndarray:
         n = data.shape[0]
-        m = 3*self.random_samples_number
+        m = 3 * self.random_samples_number
 
         assert m <= n
 
         points = data[np.random.choice(n, m)].reshape(-1, 3, 3)
+        score_points = data[np.random.choice(n, self.score_points_number)]
+        score_points = np.concatenate(
+            (score_points.reshape(-1, 1, 3), np.ones((self.score_points_number, 1, 1))), axis=2)
+
+        return self.find_nearest_plane(points, score_points)
+
+    def find_nearest_plane(self, points: np.ndarray, score_points: np.ndarray):
+        assert points.shape[1:] == (3, 3)
+        assert score_points.shape[1:] == (1, 4)
 
         n1 = points[:, 1, :] - points[:, 0, :]
         n2 = points[:, 2, :] - points[:, 0, :]
@@ -33,13 +42,8 @@ class RANSACProcessor(DataProcessor):
 
         assert planes.shape == (self.random_samples_number, 4)
 
-        planes = planes / ((planes[:, :-1]**2).sum(axis=1)**0.5).reshape(-1, 1)
-
-        score_points = data[np.random.choice(n, self.score_points_number)]
-        score_points = np.concatenate((score_points.reshape(-1, 1, 3), np.ones((self.score_points_number, 1, 1))), axis=2)
-
+        planes = planes / ((planes[:, :-1] ** 2).sum(axis=1) ** 0.5).reshape(-1, 1)
         scores = np.abs((planes * score_points).sum(axis=-1)).mean(axis=0)
-
         result = planes[np.nanargmin(scores)]
 
         return result
