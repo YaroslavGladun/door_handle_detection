@@ -52,6 +52,7 @@ pc = rs.pointcloud()
 ransac_processor = RANSACProcessor(5000, 2500)
 depth_image_ransac_processor = DepthImageRANSACProcessor(1000, 500)
 
+depth_image = 0
 try:
     while True:
         frames = pipeline.wait_for_frames()
@@ -62,15 +63,19 @@ try:
         if not aligned_depth_frame or not color_frame:
             continue
 
-        depth_image = np.asanyarray(aligned_depth_frame.get_data()) * depth_scale
+        k = 0.5
+        depth_image = k*depth_image + (1-k)*np.asanyarray(aligned_depth_frame.get_data()) * depth_scale
         color_image = np.asanyarray(color_frame.get_data())
 
         a, b, c, d = depth_image_ransac_processor.fit_transform(depth_image)
         plane = np.array([-a / c, -b / c, -d / c]).reshape(1, 1, 3)
         plane_image = (plane * indexes).sum(axis=2)
 
-        m = numpy.where(np.abs(plane_image - depth_image) < 0.05)
-        color_image[m] = color_image[m] / 3
+        m = numpy.where(np.abs(plane_image - depth_image) < 0.01)
+        color_image[m] = color_image[m]/3 + [114, 114, 33]
+
+        m = numpy.where(plane_image - depth_image <= -0.01)
+        color_image[m] = color_image[m]/3 + [47, 31, 21]
 
         cv2.namedWindow('Align Example', cv2.WINDOW_NORMAL)
         cv2.imshow('Align Example', color_image)

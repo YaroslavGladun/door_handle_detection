@@ -1,0 +1,7 @@
+<palette>
+<color name='The-Biggest-Lie-1' rgb='3D3D3D' r='61' g='61' b='61' />
+<color name='The-Biggest-Lie-2' rgb='84B026' r='132' g='175' b='37' />
+<color name='The-Biggest-Lie-3' rgb='217373' r='33' g='114' b='114' />
+<color name='The-Biggest-Lie-4' rgb='173540' r='22' g='53' b='63' />
+<color name='The-Biggest-Lie-5' rgb='161F30' r='21' g='31' b='47' />
+</palette>
