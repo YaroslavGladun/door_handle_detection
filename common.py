@@ -1,18 +1,52 @@
-import math
 import numpy as np
 from typing import Tuple
+
+
+class Point(np.ndarray):
+
+    @staticmethod
+    def normalized(a, b, c):
+        p = Point([a, b, c])
+        return p / np.linalg.norm(p)
+
+    def __new__(cls, input_array):
+        if len(input_array) != 3:
+            raise ValueError("Point must have a size of 3")
+
+        obj = np.asarray(input_array).view(cls)
+        return obj
+
+
+class Plane(np.ndarray):
+
+    @staticmethod
+    def normalized(a, b, c, d):
+        abc_norm = np.linalg.norm([a, b, c])
+        a, b, c, d = a / abc_norm, b / abc_norm, c / abc_norm, d / abc_norm
+        return Plane([a, b, c, d])
+
+    def __new__(cls, input_array):
+        if len(input_array) != 4:
+            raise ValueError("Plane must have a size of 4")
+
+        obj = np.asarray(input_array).view(cls)
+        return obj
+
+    def norm(self) -> Point:
+        a, b, c, _ = self
+        return Point.normalized(a, b, c)
 
 
 class CropImagesToAspectRatio:
 
     @staticmethod
     def __simplify(a: int, b: int) -> Tuple[int, int]:
-        gcd = math.gcd(a, b)
+        gcd = np.gcd(a, b)
         return a // gcd, b // gcd
 
     @staticmethod
     def __to_common_denominator(a1, b1, a2, b2) -> Tuple[int, int, int, int]:
-        d = math.lcm(b1, b2)
+        d = np.lcm(b1, b2)
         return (d // b1) * a1, d, (d // b2) * a2, d
 
     @staticmethod

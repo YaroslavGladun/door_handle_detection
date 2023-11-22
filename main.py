@@ -1,120 +1,49 @@
-# ----------------------------------------------------------------------------
-# -                        Open3D: www.open3d.org                            -
-# ----------------------------------------------------------------------------
-# Copyright (c) 2018-2023 www.open3d.org
-# SPDX-License-Identifier: MIT
-# ----------------------------------------------------------------------------
-
-import numpy as np
 import open3d as o3d
-import threading
-import time
+import numpy as np
 
-CLOUD_NAME = "points"
-
-
-def main():
-    MultiWinApp().run()
+# Example: Create a random point cloud
+points = np.random.rand(100, 3)  # 100 points in 3D
+point_cloud = o3d.geometry.PointCloud()
+point_cloud.points = o3d.utility.Vector3dVector(points)
 
 
-class MultiWinApp:
+# Visualization function
+def visualize_point_cloud(pcd):
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    vis.create_window()
 
-    def __init__(self):
-        self.is_done = False
-        self.n_snapshots = 0
-        self.cloud = None
-        self.main_vis = None
-        self.snapshot_pos = None
+    # Add point cloud
+    vis.add_geometry(pcd)
 
-    def run(self):
-        app = o3d.visualization.gui.Application.instance
-        app.initialize()
+    # Define key callbacks to move the point cloud
+    def move_along_x(*args, **kwargs):
+        for point in pcd.points:
+            point[0] += 0.005
+        vis.update_geometry(pcd)
+        vis.poll_events()
+        vis.update_renderer()
 
-        self.main_vis = o3d.visualization.O3DVisualizer(
-            "Open3D - Multi-Window Demo")
-        self.main_vis.add_action("Take snapshot in new window",
-                                 self.on_snapshot)
-        self.main_vis.set_on_close(self.on_main_window_closing)
+    def move_along_y(*args, **kwargs):
+        for point in pcd.points:
+            point[1] += 0.005
+        vis.update_geometry(pcd)
+        vis.poll_events()
+        vis.update_renderer()
 
-        app.add_window(self.main_vis)
-        self.snapshot_pos = (self.main_vis.os_frame.x, self.main_vis.os_frame.y)
+    def move_along_z(*args, **kwargs):
+        for point in pcd.points:
+            point[2] += 0.005
+        vis.update_geometry(pcd)
+        vis.poll_events()
+        vis.update_renderer()
 
-        threading.Thread(target=self.update_thread).start()
+    # Assign keys for the sliders
+    vis.register_key_callback(262, move_along_x)  # Right arrow key
+    vis.register_key_callback(263, move_along_y)  # Left arrow key
+    vis.register_key_callback(264, move_along_z)  # Down arrow key
 
-        app.run()
-
-    def on_snapshot(self, vis):
-        self.n_snapshots += 1
-        self.snapshot_pos = (self.snapshot_pos[0] + 50,
-                             self.snapshot_pos[1] + 50)
-        title = "Open3D - Multi-Window Demo (Snapshot #" + str(
-            self.n_snapshots) + ")"
-        new_vis = o3d.visualization.O3DVisualizer(title)
-        mat = o3d.visualization.rendering.MaterialRecord()
-        mat.shader = "defaultUnlit"
-        new_vis.add_geometry(CLOUD_NAME + " #" + str(self.n_snapshots),
-                             self.cloud, mat)
-        new_vis.reset_camera_to_default()
-        bounds = self.cloud.get_axis_aligned_bounding_box()
-        extent = bounds.get_extent()
-        new_vis.setup_camera(60, bounds.get_center(),
-                             bounds.get_center() + [0, 0, -3], [0, -1, 0])
-        o3d.visualization.gui.Application.instance.add_window(new_vis)
-        new_vis.os_frame = o3d.visualization.gui.Rect(self.snapshot_pos[0],
-                                                      self.snapshot_pos[1],
-                                                      new_vis.os_frame.width,
-                                                      new_vis.os_frame.height)
-
-    def on_main_window_closing(self):
-        self.is_done = True
-        return True  # False would cancel the close
-
-    def update_thread(self):
-        # This is NOT the UI thread, need to call post_to_main_thread() to update
-        # the scene or any part of the UI.
-        pcd_data = o3d.data.DemoICPPointClouds()
-        self.cloud = o3d.io.read_point_cloud(pcd_data.paths[0])
-        bounds = self.cloud.get_axis_aligned_bounding_box()
-        extent = bounds.get_extent()
-
-        def add_first_cloud():
-            mat = o3d.visualization.rendering.MaterialRecord()
-            mat.shader = "defaultUnlit"
-            self.main_vis.add_geometry(CLOUD_NAME, self.cloud, mat)
-            self.main_vis.reset_camera_to_default()
-            self.main_vis.setup_camera(60, bounds.get_center(),
-                                       bounds.get_center() + [0, 0, -3],
-                                       [0, -1, 0])
-
-        o3d.visualization.gui.Application.instance.post_to_main_thread(
-            self.main_vis, add_first_cloud)
-
-        while not self.is_done:
-            time.sleep(0.1)
-
-            # Perturb the cloud with a random walk to simulate an actual read
-            pts = np.asarray(self.cloud.points)
-            magnitude = 0.005 * extent
-            displacement = magnitude * (np.random.random_sample(pts.shape) -
-                                        0.5)
-            new_pts = pts + displacement
-            self.cloud.points = o3d.utility.Vector3dVector(new_pts)
-
-            def update_cloud():
-                # Note: if the number of points is less than or equal to the
-                #       number of points in the original object that was added,
-                #       using self.scene.update_geometry() will be faster.
-                #       Requires that the point cloud be a t.PointCloud.
-                self.main_vis.remove_geometry(CLOUD_NAME)
-                mat = o3d.visualization.rendering.MaterialRecord()
-                mat.shader = "defaultUnlit"
-                self.main_vis.add_geometry(CLOUD_NAME, self.cloud, mat)
-
-            if self.is_done:  # might have changed while sleeping
-                break
-            o3d.visualization.gui.Application.instance.post_to_main_thread(
-                self.main_vis, update_cloud)
+    vis.run()
+    vis.destroy_window()
 
 
-if __name__ == "__main__":
-    main()
+visualize_point_cloud(point_cloud)

@@ -10,42 +10,6 @@ import math
 from typing import Tuple
 
 
-def read_exr(file_path):
-    exr_file = OpenEXR.InputFile(file_path)
-
-    dw = exr_file.header()['dataWindow']
-    size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
-
-    # Read the depth channel (assuming it's named 'Z')
-    depth_str = exr_file.channel('R', Imath.PixelType(Imath.PixelType.FLOAT))
-    depth = np.frombuffer(depth_str, dtype=np.float32)
-    depth.shape = (size[1], size[0])  # Reshape to the image size
-
-    return depth
-
-
-def draw_origin_on_image(image, cam_info, t, r, transparency):
-    fx, fy = cam_info[0, 0], cam_info[1, 1]
-    px, py = cam_info[0, 2], cam_info[1, 2]
-    # a0 = np.array([0, 0, 0.3])
-    ax = np.array([0.05, 0, 0]) + t
-    ay = np.array([0, 0.05, 0]) + t
-    az = np.array([0, 0, 0.05]) + t
-
-    a0_cv_pt = (int(fx * t[0] / t[2] + px), int(fy * t[1] / t[2] + py))
-    ax_cv_pt = (int(fx * ax[0] / ax[2] + px), int(fy * ax[1] / ax[2] + py))
-    ay_cv_pt = (int(fx * ay[0] / ay[2] + px), int(fy * ay[1] / ay[2] + py))
-    az_cv_pt = (int(fx * az[0] / az[2] + px), int(fy * az[1] / az[2] + py))
-
-    new_image = image.copy()
-    cv2.line(new_image, a0_cv_pt, ax_cv_pt, (0, 0, 255), 15)
-    cv2.line(new_image, a0_cv_pt, ay_cv_pt, (0, 255, 0), 15)
-    cv2.line(new_image, a0_cv_pt, az_cv_pt, (255, 0, 0), 15)
-    cv2.addWeighted(image, transparency, new_image, 1 - transparency, 0, new_image)
-
-    return new_image
-
-
 def ijd_to_xyz(i, j, d, cam_info):
     # Extract the focal lengths and principal point coordinates from cam_info
     fx, fy = cam_info[0, 0], cam_info[1, 1]

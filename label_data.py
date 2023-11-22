@@ -1,45 +1,12 @@
 import cv2
 import numpy as np
+import open3d as o3d
 import matplotlib.pyplot as plt
-from common import CropImagesToAspectRatio
+from common import CropImagesToAspectRatio, Point, Plane
 from serialization import read_exr_points
+from visualization_tools import draw_origin_on_image
 from sklearn.linear_model import RANSACRegressor
 from sklearn.linear_model import LinearRegression
-
-
-class Point(np.ndarray):
-
-    @staticmethod
-    def normalized(a, b, c):
-        p = Point([a, b, c])
-        return p / np.linalg.norm(p)
-
-    def __new__(cls, input_array):
-        if len(input_array) != 3:
-            raise ValueError("Point must have a size of 3")
-
-        obj = np.asarray(input_array).view(cls)
-        return obj
-
-
-class Plane(np.ndarray):
-
-    @staticmethod
-    def normalized(a, b, c, d):
-        abc_norm = np.linalg.norm([a, b, c])
-        a, b, c, d = a / abc_norm, b / abc_norm, c / abc_norm, d / abc_norm
-        return Plane([a, b, c, d])
-
-    def __new__(cls, input_array):
-        if len(input_array) != 4:
-            raise ValueError("Plane must have a size of 4")
-
-        obj = np.asarray(input_array).view(cls)
-        return obj
-
-    def norm(self) -> Point:
-        a, b, c, _ = self
-        return Point.normalized(a, b, c)
 
 
 class LabelTestCase:
@@ -168,100 +135,71 @@ class LabelTestCase:
         ])
         return affine_matrix
 
-    @staticmethod
-    def draw_origin_on_image(image: np.ndarray, pose: np.ndarray):
-        # fx, fy = LabelTestCase.FX, LabelTestCase.FY
-        fx, fy = 2 * (1421.0684814453125,)
-        # px, py = LabelTestCase.CX, LabelTestCase.CY
-        px, py = 724.485107421875, 965.93603515625
-        a0 = pose[:-1, 3]
-        ax = np.dot(pose, np.array([0.02, 0, 0, 1]).reshape(-1, 1))[:-1]
-        ay = np.dot(pose, np.array([0, 0.02, 0, 1]).reshape(-1, 1))[:-1]
-        az = np.dot(pose, np.array([0, 0, 0.02, 1]).reshape(-1, 1))[:-1]
 
-        a0_cv_pt = (int(fx * a0[0] / a0[2] + px), int(fy * a0[1] / a0[2] + py))
-        ax_cv_pt = (int(fx * ax[0] / ax[2] + px), int(fy * ax[1] / ax[2] + py))
-        ay_cv_pt = (int(fx * ay[0] / ay[2] + px), int(fy * ay[1] / ay[2] + py))
-        az_cv_pt = (int(fx * az[0] / az[2] + px), int(fy * az[1] / az[2] + py))
-
-        cv2.line(image, a0_cv_pt, ax_cv_pt, (0, 0, 255), 3)  # Red for X-axis
-        cv2.line(image, a0_cv_pt, ay_cv_pt, (0, 255, 0), 3)  # Green for Y-axis
-        cv2.line(image, a0_cv_pt, az_cv_pt, (255, 0, 0), 3)  # Blue for Z-axis
-
-        return image
-
-
-depth = read_exr_points("/Users/hladunyaroslav/Desktop/door_handle_labeling/EXR_RGBD/depth/300.exr")
-rgb = cv2.imread("/Users/hladunyaroslav/Desktop/door_handle_labeling/EXR_RGBD/rgb/300.jpg")
+depth = read_exr_points("EXR_RGBD/depth/300.exr")
+rgb = cv2.imread("EXR_RGBD/rgb/300.jpg")
 
 labler = LabelTestCase(rgb, depth)
 affine = labler.start()
 print(affine)
 
-LabelTestCase.draw_origin_on_image(rgb, affine)
-cv2.imshow("WIN", rgb)
+rgb_copy = rgb.copy()
+draw_origin_on_image(rgb_copy, affine)
+rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1]//2, rgb_copy.shape[0]//2))
+cv2.imshow("WIN", rgb_copy)
 cv2.waitKey()
 
 R, t = affine[:-1, :-1], affine[:-1, 3]
-points = depth.reshape(-1, 3) - t
-points = np.dot(points, R)
-# points = points[np.linalg.norm(points, axis=1) < 0.30]
-# points = np.dot(points, affine)[:, :-1]
-import matplotlib as mpl
-import open3d as o3d
+points = depth.reshape(-1, 3)
+# points = depth.reshape(-1, 3) - t
+# points = np.dot(points, R)
+
+point_cloud = o3d.geometry.PointCloud()
+point_cloud.points = o3d.utility.Vector3dVector(points)
 
 
-# pcd = o3d.geometry.PointCloud()
-# pcd.points = o3d.utility.Vector3dVector(points)
-# mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
-# o3d.visualization.draw_geometries([pcd, mesh_frame])
+# Visualization function
+def visualize_point_cloud(pcd):
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    vis.create_window()
+
+    # Add point cloud
+    vis.add_geometry(pcd)
+    coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2)
+    coordinate_frame.transform(affine)
+    vis.add_geometry(coordinate_frame)
+
+    def build_move_function(i, increment):
+        def move(*args, **kwargs):
+            global affine
+
+            last_affine = affine.copy()
+            m = np.eye(4, 4, dtype=np.float32)
+            m[i, 3] += increment
+            affine = np.dot(affine, m)
+
+            rgb_copy = rgb.copy()
+            draw_origin_on_image(rgb_copy, affine)
+            rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1] // 2, rgb_copy.shape[0] // 2))
+            cv2.imshow("WIN", rgb_copy)
+            cv2.waitKey(1)
+
+            coordinate_frame.translate(affine[:-1, :-1] @ m[:-1, [3]])
+            vis.update_geometry(coordinate_frame)
+            vis.poll_events()
+            vis.update_renderer()
+
+        return move
+
+    vis.register_key_callback(262, build_move_function(1, 0.005))
+    vis.register_key_callback(263, build_move_function(1, -0.005))
+    vis.register_key_callback(265, build_move_function(2, 0.005))
+    vis.register_key_callback(264, build_move_function(2, -0.005))
+    vis.register_key_callback(68, build_move_function(0, 0.005))
+    vis.register_key_callback(65, build_move_function(0, -0.005))
+
+    vis.run()
+    vis.destroy_window()
 
 
-class CustomVisualization:
-    def __init__(self, point_cloud, mesh_frame):
-        self.window = o3d.visualization.VisualizerWithKeyCallback()
-        self.window.create_window()
-        self.point_cloud = point_cloud
-        self.mesh_frame = mesh_frame
-        self.window.add_geometry(self.point_cloud)
-        self.window.add_geometry(self.mesh_frame)
-
-        # Add GUI sliders
-        self.create_sliders()
-
-    def create_sliders(self):
-        # Create sliders and set callbacks
-        self.x_slider = self.window.create_slider("X", 0, 100, 50)
-        self.x_slider.set_on_value_change_callback(self.update_frame_position)
-
-        self.y_slider = self.window.create_slider("Y", 0, 100, 50)
-        self.y_slider.set_on_value_change_callback(self.update_frame_position)
-
-        self.z_slider = self.window.create_slider("Z", 0, 100, 50)
-        self.z_slider.set_on_value_change_callback(self.update_frame_position)
-
-    def update_frame_position(self):
-        # Get slider values and update mesh frame position
-        x = self.x_slider.get_value() / 100.0
-        y = self.y_slider.get_value() / 100.0
-        z = self.z_slider.get_value() / 100.0
-        self.mesh_frame.translate([x, y, z], relative=False)
-        self.window.update_geometry(self.mesh_frame)
-        self.window.poll_events()
-        self.window.update_renderer()
-
-    def run(self):
-        self.window.run()
-        self.window.destroy_window()
-
-
-# Your point cloud data
-pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(points)
-
-# Create mesh frame
-mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
-
-# Create and run custom visualization
-custom_vis = CustomVisualization(pcd, mesh_frame)
-custom_vis.run()
+visualize_point_cloud(point_cloud)
