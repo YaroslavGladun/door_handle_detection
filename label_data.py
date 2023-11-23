@@ -1,7 +1,10 @@
+from random import shuffle
+
 import cv2
 import numpy as np
 import open3d as o3d
 import matplotlib.pyplot as plt
+import hashlib
 from common import CropImagesToAspectRatio, Point, Plane
 from serialization import read_exr_points
 from visualization_tools import draw_origin_on_image
@@ -136,70 +139,98 @@ class LabelTestCase:
         return affine_matrix
 
 
-depth = read_exr_points("EXR_RGBD/depth/300.exr")
-rgb = cv2.imread("EXR_RGBD/rgb/300.jpg")
+class AffineCorrector:
+    def __init__(self, rgb: np.ndarray, depth: np.ndarray, base_affine: np.ndarray):
+        self.__depth = depth
+        self.__rgb = rgb
+        self.__affine = base_affine
 
-labler = LabelTestCase(rgb, depth)
-affine = labler.start()
-print(affine)
+    def visualize_point_cloud(self, pcd):
+        vis = o3d.visualization.VisualizerWithKeyCallback()
+        vis.create_window()
 
-rgb_copy = rgb.copy()
-draw_origin_on_image(rgb_copy, affine)
-rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1]//2, rgb_copy.shape[0]//2))
-cv2.imshow("WIN", rgb_copy)
-cv2.waitKey()
+        # Add point cloud
+        vis.add_geometry(pcd)
+        coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2)
+        coordinate_frame.transform(self.__affine)
+        vis.add_geometry(coordinate_frame)
 
-R, t = affine[:-1, :-1], affine[:-1, 3]
-points = depth.reshape(-1, 3)
-# points = depth.reshape(-1, 3) - t
-# points = np.dot(points, R)
+        def build_move_function(i, increment):
+            def move(*args, **kwargs):
+                m = np.eye(4, 4, dtype=np.float32)
+                m[i, 3] += increment
+                self.__affine = np.dot(self.__affine, m)
 
-point_cloud = o3d.geometry.PointCloud()
-point_cloud.points = o3d.utility.Vector3dVector(points)
+                rgb_copy = self.__rgb.copy()
+                draw_origin_on_image(rgb_copy, self.__affine)
+                rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1] // 2, rgb_copy.shape[0] // 2))
+                cv2.imshow("WIN", rgb_copy)
+                cv2.waitKey(1)
 
+                coordinate_frame.translate(self.__affine[:-1, :-1] @ m[:-1, [3]])
+                vis.update_geometry(coordinate_frame)
+                vis.poll_events()
+                vis.update_renderer()
 
-# Visualization function
-def visualize_point_cloud(pcd):
-    vis = o3d.visualization.VisualizerWithKeyCallback()
-    vis.create_window()
+            return move
 
-    # Add point cloud
-    vis.add_geometry(pcd)
-    coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2)
-    coordinate_frame.transform(affine)
-    vis.add_geometry(coordinate_frame)
+        vis.register_key_callback(262, build_move_function(1, 0.005))
+        vis.register_key_callback(263, build_move_function(1, -0.005))
+        vis.register_key_callback(265, build_move_function(2, 0.005))
+        vis.register_key_callback(264, build_move_function(2, -0.005))
+        vis.register_key_callback(68, build_move_function(0, 0.005))
+        vis.register_key_callback(65, build_move_function(0, -0.005))
 
-    def build_move_function(i, increment):
-        def move(*args, **kwargs):
-            global affine
+        vis.run()
+        vis.destroy_window()
 
-            last_affine = affine.copy()
-            m = np.eye(4, 4, dtype=np.float32)
-            m[i, 3] += increment
-            affine = np.dot(affine, m)
+    def start(self):
+        rgb_copy = self.__rgb.copy()
+        draw_origin_on_image(rgb_copy, self.__affine)
+        rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1] // 2, rgb_copy.shape[0] // 2))
+        cv2.imshow("WIN", rgb_copy)
+        cv2.waitKey()
 
-            rgb_copy = rgb.copy()
-            draw_origin_on_image(rgb_copy, affine)
-            rgb_copy = cv2.resize(rgb_copy, (rgb_copy.shape[1] // 2, rgb_copy.shape[0] // 2))
-            cv2.imshow("WIN", rgb_copy)
-            cv2.waitKey(1)
-
-            coordinate_frame.translate(affine[:-1, :-1] @ m[:-1, [3]])
-            vis.update_geometry(coordinate_frame)
-            vis.poll_events()
-            vis.update_renderer()
-
-        return move
-
-    vis.register_key_callback(262, build_move_function(1, 0.005))
-    vis.register_key_callback(263, build_move_function(1, -0.005))
-    vis.register_key_callback(265, build_move_function(2, 0.005))
-    vis.register_key_callback(264, build_move_function(2, -0.005))
-    vis.register_key_callback(68, build_move_function(0, 0.005))
-    vis.register_key_callback(65, build_move_function(0, -0.005))
-
-    vis.run()
-    vis.destroy_window()
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(self.__depth.reshape(-1, 3))
+        self.visualize_point_cloud(point_cloud)
+        return self.__affine
 
 
-visualize_point_cloud(point_cloud)
+import os
+
+depth_images_path = "EXR_RGBD/depth"
+rgb_images_path = "EXR_RGBD/rgb"
+dataset_directory = "dataset"
+
+files = os.listdir(depth_images_path)
+shuffle(files)
+for entry in files:
+    entry_name, _ = os.path.splitext(entry)
+    depth_image_path = f"{depth_images_path}/{entry_name}.exr"
+    rgb_image_path = f"{rgb_images_path}/{entry_name}.jpg"
+    depth = read_exr_points(depth_image_path)
+    rgb = cv2.imread(rgb_image_path)
+    new_name = str(hashlib.md5(depth.tobytes()).hexdigest())
+
+    labler = LabelTestCase(rgb, depth)
+    affine = labler.start()
+    corrector = AffineCorrector(rgb, depth, affine)
+    affine = corrector.start()
+    print(affine)
+
+    np.save(f"{dataset_directory}/depth_{new_name}.npy", depth)
+    np.save(f"{dataset_directory}/pose_{new_name}.npy", affine)
+    cv2.imwrite(f"{dataset_directory}/rgb_{new_name}.jpg", rgb)
+    os.remove(rgb_image_path)
+    os.remove(depth_image_path)
+
+# depth = read_exr_points("EXR_RGBD/depth/300.exr")
+# rgb = cv2.imread("EXR_RGBD/rgb/300.jpg")
+# new_name = str(hashlib.md5(depth.tobytes()).hexdigest())
+#
+# labler = LabelTestCase(rgb, depth)
+# affine = labler.start()
+# corrector = AffineCorrector(rgb, depth, affine)
+# affine = corrector.start()
+# print(affine)
