@@ -6,16 +6,20 @@ import open3d as o3d
 from random import shuffle
 from sklearn.linear_model import RANSACRegressor
 from sklearn.linear_model import LinearRegression
+from tqdm import tqdm
 
 from common import Plane, RotationMatrix, find_bounding_box_with_max_points_inside
 from serialization import read_exr_points
 
 
-def draw_points_o3d(points: np.ndarray):
+def draw_points_o3d(points: np.ndarray, bb: np.ndarray):
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points)
     coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
-    o3d.visualization.draw_geometries([pcd, coordinate_frame])
+    box_size = bb[3:] - bb[:3]
+    box = o3d.geometry.TriangleMesh.create_box(width=box_size[0], height=box_size[1], depth=box_size[2])
+    box.translate(bb[:3])
+    o3d.visualization.draw_geometries([pcd, coordinate_frame, box])
 
 
 depth_images_path = "EXR_RGBD/depth"
@@ -39,16 +43,26 @@ for entry in files:
     plane = Plane.normalized(a, b, c, d)
     distances = plane.distance_to_points(depth)
     mask = distances > 0.02
-    plt.imshow(mask, cmap='gray')
-    plt.show()
+    # plt.imshow(mask, cmap='gray')
+    # plt.show()
 
     filtered_points = points[mask.reshape(-1)]
 
     rotation = RotationMatrix.from_vector(plane.norm())
     rotated_filtered_points = (rotation.T @ filtered_points.T).T
-    # draw_points_o3d(rotated_filtered_points)
-    bb = find_bounding_box_with_max_points_inside(
-        rotated_filtered_points, [0.1, 0.1, 0.1])
+
+    angle_score_bb = []
+    for z_angle in tqdm(np.linspace(0, 2 * np.pi, 100)):
+        rotation = RotationMatrix.from_angle_axis(z_angle, [0, 0, 1])
+        rotated_filtered_points = (rotation.T @ filtered_points.T).T
+        bb, score = find_bounding_box_with_max_points_inside(
+            rotated_filtered_points, [0.15, 0.03, 0.05])
+        angle_score_bb.append((z_angle, score, bb))
+    angle_score_bb.sort(key=lambda x: x[1], reverse=True)
+    z_angle, score, bb = angle_score_bb[0]
+    rotation = RotationMatrix.from_angle_axis(z_angle, [0, 0, 1])
+    rotated_filtered_points = (rotation.T @ filtered_points.T).T
+    draw_points_o3d(rotated_filtered_points, bb)
     print(bb)
 
     # new_name = str(hashlib.md5(depth.tobytes()).hexdigest())

@@ -204,36 +204,17 @@ class CropImagesToAspectRatio:
         return images[:, h_start:h_start + h, w_start:w_start + w]
 
 
-class AlignedBox3d:
-    def __init__(self, min_point, max_point):
-        self.min_point = np.array(min_point)
-        self.max_point = np.array(max_point)
-
-    def contains(self, point):
-        return np.all(point >= self.min_point) and np.all(point <= self.max_point)
-
-
-def find_bounding_box_with_max_points_inside(points, max_size):
-    boxes = []
+def find_bounding_box_with_max_points_inside(points, max_size: np.ndarray):
     sx, sy, sz = max_size
-    for point in points:
-        for k in range(8):
-            begin = point - np.array([(k & 1) * sx, (k & 2) * sy, (k & 4) * sz])
-            end = begin + np.array(max_size)
-            boxes.append(AlignedBox3d(begin, end))
-
-    print(len(boxes))
-    points_inside_count = [0] * len(boxes)
-    for i, box in tqdm(enumerate(boxes)):
-        for p in points:
-            if box.contains(p):
-                points_inside_count[i] += 1
-
-    max_points_index = np.argmax(points_inside_count)
-    box_with_max_points = boxes[max_points_index]
-
-    points_in_max_box = [p for p in points if box_with_max_points.contains(p)]
-    min_point = np.min(points_in_max_box, axis=0)
-    max_point = np.max(points_in_max_box, axis=0)
-
-    return AlignedBox3d(min_point, max_point)
+    boxes = np.zeros((0, 6), dtype=np.float64)
+    for k in range(8):
+        begin = points - np.array([[(k & 1) * sx, (k & 2) * sy, (k & 4) * sz]])
+        end = begin + np.array(max_size)
+        boxes = np.concatenate((boxes, np.concatenate((begin, end), axis=1)), axis=0)
+    boxes_begin = boxes[:, np.newaxis, :3]
+    boxes_end = boxes[:, np.newaxis, 3:]
+    points = points[np.newaxis, ...]
+    is_box_has_point = np.all((points >= boxes_begin), axis=-1) & np.all((points <= boxes_end), axis=-1)
+    box_points_counts = np.count_nonzero(is_box_has_point, axis=-1)
+    best_box_index = np.argmax(box_points_counts)
+    return boxes[best_box_index], box_points_counts[best_box_index]
