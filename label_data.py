@@ -5,7 +5,7 @@ import numpy as np
 import open3d as o3d
 import matplotlib.pyplot as plt
 import hashlib
-from common import CropImagesToAspectRatio, Point, Plane
+from common import CropImagesToAspectRatio, Vector3, Plane
 from serialization import read_exr_points
 from visualization_tools import draw_origin_on_image
 from sklearn.linear_model import RANSACRegressor
@@ -128,7 +128,7 @@ class LabelTestCase:
             x = multiplier * (u - p)
             y = multiplier * (v - p)
             z = multiplier * f
-            return Point([x, y, z])
+            return Vector3([x, y, z])
 
         self.__p1 = g(*self.__handle_begin_show.get_offsets().reshape(-1))
         self.__p2 = g(*self.__handle_end_show.get_offsets().reshape(-1))
@@ -136,7 +136,7 @@ class LabelTestCase:
 
     def get_affine(self):
         _, _ = self.get_handle_projection()
-        a = Point.normalized(*(self.__p2 - self.__p1))
+        a = Vector3.normalized(*(self.__p2 - self.__p1))
         b = -self.__plane.norm()
         c = np.cross(a, b)
         p = self.__p1
@@ -226,7 +226,11 @@ for entry in files:
     labler = LabelTestCase(rgb, depth)
     affine = labler.start()
     plane = labler.plane()
-    de
+    distances = plane.distance_to_points(depth)
+    depth_copy = depth.copy()
+    points = depth_copy[distances < 0.01]
+    plt.imshow(depth_copy[..., 2])
+    plt.show()
     corrector = AffineCorrector(rgb, depth, affine)
     affine = corrector.start()
     print(affine)

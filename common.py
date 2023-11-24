@@ -2,14 +2,14 @@ import numpy as np
 from typing import Tuple
 
 
-class Point(np.ndarray):
+class Vector3(np.ndarray):
 
     @staticmethod
     def normalized(a, b, c):
-        p = Point([a, b, c])
+        p = Vector3(np.array([a, b, c]))
         return p / np.linalg.norm(p)
 
-    def __new__(cls, input_array):
+    def __new__(cls, input_array: np.ndarray):
         if len(input_array) != 3:
             raise ValueError("Point must have a size of 3")
 
@@ -23,18 +23,24 @@ class Plane(np.ndarray):
     def normalized(a, b, c, d):
         abc_norm = np.linalg.norm([a, b, c])
         a, b, c, d = a / abc_norm, b / abc_norm, c / abc_norm, d / abc_norm
-        return Plane([a, b, c, d])
+        return Plane(np.array([a, b, c, d]))
 
-    def __new__(cls, input_array):
+    def __new__(cls, input_array: np.ndarray):
         if len(input_array) != 4:
             raise ValueError("Plane must have a size of 4")
 
         obj = np.asarray(input_array).view(cls)
         return obj
 
-    def norm(self) -> Point:
+    def norm(self) -> Vector3:
         a, b, c, _ = self
-        return Point.normalized(a, b, c)
+        return Vector3.normalized(a, b, c)
+
+    def distance_to_points(self, points: np.ndarray) -> np.ndarray:
+        assert points.shape[-1] == 3
+        a, b, c, d = self
+        result = points[..., 0] * a + points[..., 1] * b + points[..., 2] * c + d
+        return result
 
 
 class CropImagesToAspectRatio:
