@@ -32,6 +32,9 @@ class LabelTestCase:
         self.__cell_size = self.__depth.shape[0] / self.GRID_SIZE
         self.__plane = None
 
+    def plane(self):
+        return self.__plane
+
     def start(self):
         self.__fig, (self.__ax1, self.__ax2) = plt.subplots(1, 2)
         self.__ax1.imshow(self.__depth[..., 2])
@@ -54,6 +57,13 @@ class LabelTestCase:
         self.__handle_end_show = None
 
         self.__fig.canvas.mpl_connect('key_release_event', self.on_key_release)
+
+        points = self.__depth.reshape(-1, 3)
+        ransac = RANSACRegressor(LinearRegression())
+        ransac.fit(points[:, [0, 1]], points[:, 2])
+        (a, b), c = ransac.estimator_.coef_, -1
+        d = ransac.estimator_.intercept_
+        self.__plane = Plane.normalized(a, b, c, d)
 
         plt.show()
 
@@ -215,6 +225,8 @@ for entry in files:
 
     labler = LabelTestCase(rgb, depth)
     affine = labler.start()
+    plane = labler.plane()
+    de
     corrector = AffineCorrector(rgb, depth, affine)
     affine = corrector.start()
     print(affine)
