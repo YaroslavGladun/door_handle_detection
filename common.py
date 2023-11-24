@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Tuple
+from tqdm import tqdm
 
 
 class Vector3(np.ndarray):
@@ -221,8 +222,9 @@ def find_bounding_box_with_max_points_inside(points, max_size):
             end = begin + np.array(max_size)
             boxes.append(AlignedBox3d(begin, end))
 
+    print(len(boxes))
     points_inside_count = [0] * len(boxes)
-    for i, box in enumerate(boxes):
+    for i, box in tqdm(enumerate(boxes)):
         for p in points:
             if box.contains(p):
                 points_inside_count[i] += 1

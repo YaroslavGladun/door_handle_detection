@@ -45,8 +45,11 @@ for entry in files:
     filtered_points = points[mask.reshape(-1)]
 
     rotation = RotationMatrix.from_vector(plane.norm())
-    draw_points_o3d((rotation.T @ filtered_points.T).T)
-    find_bounding_box_with_max_points_inside(filtered_points, rotation)
+    rotated_filtered_points = (rotation.T @ filtered_points.T).T
+    # draw_points_o3d(rotated_filtered_points)
+    bb = find_bounding_box_with_max_points_inside(
+        rotated_filtered_points, [0.1, 0.1, 0.1])
+    print(bb)
 
     # new_name = str(hashlib.md5(depth.tobytes()).hexdigest())
     #
