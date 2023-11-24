@@ -5,6 +5,18 @@ from typing import Tuple
 class Vector3(np.ndarray):
 
     @staticmethod
+    def unit_x():
+        return Vector3(np.array([1, 0, 0]))
+
+    @staticmethod
+    def unit_y():
+        return Vector3(np.array([0, 1, 0]))
+
+    @staticmethod
+    def unit_z():
+        return Vector3(np.array([0, 0, 1]))
+
+    @staticmethod
     def normalized(a, b, c):
         p = Vector3(np.array([a, b, c]))
         return p / np.linalg.norm(p)
@@ -15,6 +27,40 @@ class Vector3(np.ndarray):
 
         obj = np.asarray(input_array).view(cls)
         return obj
+
+
+class RotationMatrix(np.ndarray):
+
+    def __new__(cls, input_array: np.ndarray):
+        if input_array.shape != (3, 3):
+            raise ValueError("Rotation matrix must have a size of 3x3")
+
+        obj = np.asarray(input_array).view(cls)
+        return obj
+
+    @staticmethod
+    def from_vector(vector: Vector3):
+        x, y, z = vector
+        c = np.cos
+        s = np.sin
+        matrix = np.array([
+            [c(y) * c(z), c(z) * s(x) * s(y) - c(x) * s(z), c(x) * c(z) * s(y) + s(x) * s(z)],
+            [c(y) * s(z), c(x) * c(z) + s(x) * s(y) * s(z), c(x) * s(y) * s(z) - c(z) * s(x)],
+            [-s(y), c(y) * s(x), c(x) * c(y)]
+        ])
+        return RotationMatrix(matrix)
+
+    @staticmethod
+    def from_angle_axis(angle: float, axis: Vector3):
+        x, y, z = axis
+        c = np.cos(angle)
+        s = np.sin(angle)
+        matrix = np.array([
+            [c + x * x * (1 - c), x * y * (1 - c) - z * s, x * z * (1 - c) + y * s],
+            [y * x * (1 - c) + z * s, c + y * y * (1 - c), y * z * (1 - c) - x * s],
+            [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)]
+        ])
+        return RotationMatrix(matrix)
 
 
 class Plane(np.ndarray):
@@ -155,3 +201,37 @@ class CropImagesToAspectRatio:
         h_start = (h0 - h) // 2
         w_start = (w0 - w) // 2
         return images[:, h_start:h_start + h, w_start:w_start + w]
+
+
+class AlignedBox3d:
+    def __init__(self, min_point, max_point):
+        self.min_point = np.array(min_point)
+        self.max_point = np.array(max_point)
+
+    def contains(self, point):
+        return np.all(point >= self.min_point) and np.all(point <= self.max_point)
+
+
+def find_bounding_box_with_max_points_inside(points, max_size):
+    boxes = []
+    sx, sy, sz = max_size
+    for point in points:
+        for k in range(8):
+            begin = point - np.array([(k & 1) * sx, (k & 2) * sy, (k & 4) * sz])
+            end = begin + np.array(max_size)
+            boxes.append(AlignedBox3d(begin, end))
+
+    points_inside_count = [0] * len(boxes)
+    for i, box in enumerate(boxes):
+        for p in points:
+            if box.contains(p):
+                points_inside_count[i] += 1
+
+    max_points_index = np.argmax(points_inside_count)
+    box_with_max_points = boxes[max_points_index]
+
+    points_in_max_box = [p for p in points if box_with_max_points.contains(p)]
+    min_point = np.min(points_in_max_box, axis=0)
+    max_point = np.max(points_in_max_box, axis=0)
+
+    return AlignedBox3d(min_point, max_point)
