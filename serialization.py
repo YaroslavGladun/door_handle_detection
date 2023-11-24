@@ -2,6 +2,8 @@ import numpy as np
 import OpenEXR
 import Imath
 
+from common import CameraIntrinsics
+
 
 def read_exr(file_path: str) -> np.ndarray:
     exr_file = OpenEXR.InputFile(file_path)
@@ -18,12 +20,9 @@ def read_exr(file_path: str) -> np.ndarray:
 
 def read_exr_points(file_path: str) -> np.ndarray:
     depth = read_exr(file_path)
-    fx, fy = 181.45, 181.45
-    cx, cy = 96.7, 128.8
+    intrinsics = CameraIntrinsics.source_depth_image_intrinsics()
     x_coords = np.arange(depth.shape[1])
     y_coords = np.arange(depth.shape[0])
     x_coords, y_coords = np.meshgrid(x_coords, y_coords)
-    X = ((x_coords - cx) * depth) / fx
-    Y = ((y_coords - cy) * depth) / fy
-    depth = np.stack((X, Y, depth), axis=-1)
-    return depth
+    depth = np.stack((x_coords, y_coords, depth), axis=-1)
+    return intrinsics.uvd_to_xyz(depth)

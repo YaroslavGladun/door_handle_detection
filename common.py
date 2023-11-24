@@ -43,6 +43,67 @@ class Plane(np.ndarray):
         return result
 
 
+class Translation(np.ndarray):
+
+    def __init__(self, input_array: np.ndarray):
+        if len(input_array) != 3:
+            raise ValueError("Translation must have a size of 3")
+        self.__input_array = input_array
+
+
+class CameraIntrinsics:
+
+    @staticmethod
+    def source_rgb_image_intrinsics():
+        return CameraIntrinsics(
+            1421.0684814453125,
+            1421.0684814453125,
+            724.485107421875,
+            965.93603515625)
+
+    @staticmethod
+    def source_depth_image_intrinsics():
+        return CameraIntrinsics(
+            181.45,
+            181.45,
+            96.7,
+            128.8)
+
+    def __init__(self, fx, fy, cx, cy):
+        self.__fx = fx
+        self.__fy = fy
+        self.__cx = cx
+        self.__cy = cy
+
+    def xyz_to_uvd(self, xyz: np.ndarray) -> np.ndarray:
+        x, y, z = xyz[..., 0], xyz[..., 1], xyz[..., 2]
+        u = self.__fx * x / z + self.__cx
+        v = self.__fy * y / z + self.__cy
+        return np.stack((u, v, z), axis=-1)
+
+    def uvd_to_xyz(self, uvd: np.ndarray) -> np.ndarray:
+        u, v, d = uvd[..., 0], uvd[..., 1], uvd[..., 2]
+        x = (u - self.__cx) * d / self.__fx
+        y = (v - self.__cy) * d / self.__fy
+        return np.stack((x, y, d), axis=-1)
+
+    @property
+    def fx(self):
+        return self.__fx
+
+    @property
+    def fy(self):
+        return self.__fy
+
+    @property
+    def cx(self):
+        return self.__cx
+
+    @property
+    def cy(self):
+        return self.__cy
+
+
 class CropImagesToAspectRatio:
 
     @staticmethod

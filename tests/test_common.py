@@ -59,6 +59,13 @@ class TestCommon(unittest.TestCase):
         self.assertAlmostEqual(result[0], 1)
         self.assertAlmostEqual(result[1], 4)
 
+    def test_camera_intrinsics(self):
+        intrinsics = CameraIntrinsics(1, 2, 3, 4)
+        self.assertEqual(intrinsics.fx, 1)
+        self.assertEqual(intrinsics.fy, 2)
+        self.assertEqual(intrinsics.cx, 3)
+        self.assertEqual(intrinsics.cy, 4)
+
 
 if __name__ == '__main__':
     unittest.main()

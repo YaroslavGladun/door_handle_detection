@@ -1,12 +1,12 @@
 import numpy as np
 import cv2
+from common import CameraIntrinsics
 
 
-def draw_origin_on_image(image: np.ndarray, pose: np.ndarray):
-    # fx, fy = LabelTestCase.FX, LabelTestCase.FY
-    fx, fy = 2 * (1421.0684814453125,)
-    # px, py = LabelTestCase.CX, LabelTestCase.CY
-    px, py = 724.485107421875, 965.93603515625
+def draw_origin_on_image(image: np.ndarray, pose: np.ndarray,
+                         intrinsics=CameraIntrinsics.source_rgb_image_intrinsics()):
+    fx, fy = intrinsics.fx, intrinsics.fy
+    px, py = intrinsics.cx, intrinsics.cy
     a0 = pose[:-1, 3]
     ax = np.dot(pose, np.array([0.02, 0, 0, 1]).reshape(-1, 1))[:-1]
     ay = np.dot(pose, np.array([0, 0.02, 0, 1]).reshape(-1, 1))[:-1]
