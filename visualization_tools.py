@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from common import CameraIntrinsics
+from common import CameraIntrinsics, get_box_vertices
 
 
 def draw_origin_on_image(image: np.ndarray, pose: np.ndarray,
@@ -22,3 +22,33 @@ def draw_origin_on_image(image: np.ndarray, pose: np.ndarray,
     cv2.line(image, a0_cv_pt, az_cv_pt, (255, 0, 0), 3)  # Blue for Z-axis
 
     return image
+
+
+def draw_box_on_image(image: np.ndarray, pose: np.ndarray, box_size: list,
+                      intrinsics=CameraIntrinsics.source_rgb_image_intrinsics()):
+    box_vertices = get_box_vertices([0, 0, 0] + box_size)
+    box_vertices = np.dot(pose, np.concatenate((box_vertices.T, np.ones((1, 8))), axis=0))[:-1].T
+    box_vertices = intrinsics.xyz_to_uvd(box_vertices)
+    lines = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]]
+    for v1, v2 in lines:
+        cv2.line(image, (int(box_vertices[v1, 0]), int(box_vertices[v1, 1])),
+                 (int(box_vertices[v2, 0]), int(box_vertices[v2, 1])), (0, 255, 0), 3)
+    return image
+
+
+def draw_box_on_image_by_vertices(image: np.ndarray, box_vertices: np.ndarray,
+                      intrinsics=CameraIntrinsics.source_rgb_image_intrinsics()):
+    box_vertices = intrinsics.xyz_to_uvd(box_vertices)
+    lines = [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3], [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]]
+    for v1, v2 in lines:
+        cv2.line(image, (int(box_vertices[v1, 0]), int(box_vertices[v1, 1])),
+                 (int(box_vertices[v2, 0]), int(box_vertices[v2, 1])), (0, 255, 0), 3)
+    return image
+
+# im = cv2.imread('/home/yaroslav/Desktop/door_handle_detection/dataset/rgb_30c71e67e1d2e46c268fba41687e1d3b.jpg')
+# pose = np.load('/home/yaroslav/Desktop/door_handle_detection/dataset/pose_30c71e67e1d2e46c268fba41687e1d3b.npy')
+# im = draw_box_on_image(im, pose, [0.15, 0.02, 0.05])
+# im = draw_origin_on_image(im, pose)
+# im = cv2.resize(im, (im.shape[1] // 2, im.shape[0] // 2))
+# cv2.imshow('img', im)
+# cv2.waitKey(0)

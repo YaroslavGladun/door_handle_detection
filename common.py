@@ -40,16 +40,22 @@ class RotationMatrix(np.ndarray):
         return obj
 
     @staticmethod
-    def from_vector(vector: Vector3):
-        x, y, z = vector
-        c = np.cos
-        s = np.sin
-        matrix = np.array([
-            [c(y) * c(z), c(z) * s(x) * s(y) - c(x) * s(z), c(x) * c(z) * s(y) + s(x) * s(z)],
-            [c(y) * s(z), c(x) * c(z) + s(x) * s(y) * s(z), c(x) * s(y) * s(z) - c(z) * s(x)],
-            [-s(y), c(y) * s(x), c(x) * c(y)]
+    def from_vector_vector(a: Vector3, b: Vector3):
+        a = a / np.linalg.norm(a)
+        b = b / np.linalg.norm(b)
+        v = np.cross(a, b)
+        s = np.linalg.norm(v)
+        c = np.dot(a, b)
+        vx = np.array([
+            [0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0]
         ])
-        return RotationMatrix(matrix)
+        return RotationMatrix(np.eye(3) + vx + vx @ vx * (1 - c) / (s ** 2))
+
+    @staticmethod
+    def from_vector(a: Vector3):
+        return RotationMatrix.from_vector_vector(Vector3.unit_z(), a)
 
     @staticmethod
     def from_angle_axis(angle: float, axis: Vector3):
@@ -88,6 +94,12 @@ class Plane(np.ndarray):
         a, b, c, d = self
         result = points[..., 0] * a + points[..., 1] * b + points[..., 2] * c + d
         return result
+
+    def project_points(self, points: np.ndarray) -> np.ndarray:
+        assert points.shape[-1] == 3
+        a, b, c, d = self
+        multiplier = d / (a * points[..., 0] + b * points[..., 1] + c * points[..., 2] + d)
+        return points * multiplier[..., np.newaxis]
 
 
 class Translation(np.ndarray):
@@ -218,3 +230,17 @@ def find_bounding_box_with_max_points_inside(points, max_size: np.ndarray):
     box_points_counts = np.count_nonzero(is_box_has_point, axis=-1)
     best_box_index = np.argmax(box_points_counts)
     return boxes[best_box_index], box_points_counts[best_box_index]
+
+
+def get_box_vertices(box: np.ndarray):
+    x0, y0, z0, x1, y1, z1 = box
+    return np.array([
+        [x0, y0, z0],
+        [x0, y0, z1],
+        [x0, y1, z0],
+        [x0, y1, z1],
+        [x1, y0, z0],
+        [x1, y0, z1],
+        [x1, y1, z0],
+        [x1, y1, z1],
+    ])
